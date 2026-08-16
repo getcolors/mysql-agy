@@ -20,7 +20,7 @@
   1)
 
 ;; Managed by `bb pin` — do not edit by hand.
-(def ^:private mysql-agy-sha "456cc59abb7dba9ae4dc153a858238491b776649")
+(def ^:private mysql-agy-sha "3630a9464a6d41d93adc37d1b6bd261450a53868")
 
 (def ^:private mysql-agy-git-url "https://github.com/getcolors/mysql-agy.git")
 (def ^:private green-git-url "https://github.com/getcolors/green.git")
