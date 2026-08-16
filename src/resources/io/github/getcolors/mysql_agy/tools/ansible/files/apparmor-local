@@ -1,3 +1,5 @@
 # Site-specific additions and overrides for usr.sbin.mysqld.
+/var/lib/mysql-agy/verify/ r,
 /var/lib/mysql-agy/verify/** rwk,
+/etc/mysql-agy/ r,
 /etc/mysql-agy/verify.cnf r,
