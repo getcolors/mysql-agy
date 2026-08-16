@@ -48,6 +48,7 @@
       changed_when: true
 
     - name: Create the replication account on every member
+      when: gr_online.stdout | trim == '0'
       ansible.builtin.shell: |
         set -euo pipefail
         esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g"; }
@@ -75,6 +76,7 @@
       when: repl_account is not skipped and (repl_account.rc | default(1)) != 0
 
     - name: Create the administrative account on every member
+      when: gr_online.stdout | trim == '0'
       ansible.builtin.shell: |
         set -euo pipefail
         esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g"; }
