@@ -42,3 +42,14 @@ Target: 3-node MySQL Group Replication on DigitalOcean (`ams3`, `s-2vcpu-4gb`, `
 
 ### Phase 4: Git & Pinning
 - **Started**: `2026-08-16T12:19:45+02:00`
+- **Completed**: `2026-08-16T12:20:20+02:00`
+- **Git & Pinning Summary**:
+  - Created public GitHub repositories: `getcolors/mysql-agy` and `getcolors/mysql-agy-digitalocean`.
+  - Executed `bb pin` to stamp launcher with git commit `ae642657619a788d42971dd75c568832f6d768a4`.
+  - Pushed stamped launcher to `getcolors/mysql-agy`.
+  - Copied launcher to `mysql-agy-digitalocean` (`.agents/skills/package-mysql-agy-green/green` and `./green`), verified byte-identical with `cmp`.
+  - Committed and pushed `mysql-agy-digitalocean` to GitHub.
+  - Verified `./green build` and `./green create --dry-run` against cloned GitHub repo dependency.
+
+### Phase 5: Real Deployment & Acceptance
+- **Started**: `2026-08-16T12:20:25+02:00`
