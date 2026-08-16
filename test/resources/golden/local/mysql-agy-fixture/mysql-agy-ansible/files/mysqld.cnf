@@ -1,0 +1,44 @@
+# Managed by Colors mysql-agy. Do not edit on the host; change colors.yml.
+[mysqld]
+
+# --- identity ---------------------------------------------------------------
+server_id                = {{ server_id }}
+report_host              = {{ private_ip }}
+report_port              = 3306
+port                     = 3306
+bind_address             = 0.0.0.0
+mysqlx                   = OFF
+default_time_zone        = '+00:00'
+
+# --- GTID and binary logging ------------------------------------------------
+gtid_mode                = ON
+enforce_gtid_consistency = ON
+binlog_format            = ROW
+log_replica_updates      = ON
+log_bin                  = /var/log/mysql/binlog
+relay_log_recovery       = ON
+binlog_expire_logs_seconds = 259200
+
+# --- durability -------------------------------------------------------------
+innodb_buffer_pool_size        = 1G
+innodb_flush_log_at_trx_commit = 1
+sync_binlog                    = 1
+
+# --- Group Replication ------------------------------------------------------
+plugin_load_add = 'group_replication.so'
+
+group_replication_group_name   = "00000000-1111-2222-3333-444444444444"
+group_replication_local_address = "{{ private_ip }}:33061"
+group_replication_group_seeds  = "10.110.0.11:33061,10.110.0.12:33061,10.110.0.13:33061"
+
+group_replication_single_primary_mode              = ON
+group_replication_enforce_update_everywhere_checks = OFF
+group_replication_ip_allowlist                     = "10.110.0.0/20"
+group_replication_recovery_get_public_key          = ON
+
+group_replication_bootstrap_group = OFF
+group_replication_start_on_boot   = OFF
+
+group_replication_unreachable_majority_timeout = 30
+group_replication_exit_state_action            = OFFLINE_MODE
+group_replication_autorejoin_tries             = 5

@@ -1,0 +1,12 @@
+.colors/
+.direnv/
+.devenv/
+.devenv.flake.nix
+.envrc.private
+.cpcache/
+.nrepl-port
+.shadow-cljs/
+pom.xml
+classes/
+target/
+*.jar

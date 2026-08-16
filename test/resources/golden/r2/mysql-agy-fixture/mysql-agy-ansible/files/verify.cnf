@@ -1,0 +1,23 @@
+# Managed by Colors mysql-agy.
+[mysqld]
+user                     = mysql
+datadir                  = /var/lib/mysql-agy/verify/data
+socket                   = /var/lib/mysql-agy/verify/mysqld.sock
+pid_file                 = /var/lib/mysql-agy/verify/mysqld.pid
+log_error                = /var/lib/mysql-agy/verify/error.log
+tmpdir                   = /var/lib/mysql-agy/verify/tmp
+secure_file_priv         = /var/lib/mysql-agy/verify/tmp
+skip_networking
+skip_name_resolve
+server_id                = 999
+default_time_zone        = '+00:00'
+
+gtid_mode                = ON
+enforce_gtid_consistency = ON
+binlog_format            = ROW
+log_bin                  = /var/lib/mysql-agy/verify/binlog
+log_replica_updates      = ON
+
+innodb_buffer_pool_size  = 128M
+innodb_redo_log_capacity = 67108864
+performance_schema       = OFF

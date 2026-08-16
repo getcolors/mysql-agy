@@ -1,0 +1,44 @@
+---
+- name: Stop the managed agents
+  hosts: mysql
+  become: true
+  gather_facts: false
+  any_errors_fatal: false
+  ignore_unreachable: true
+
+  tasks:
+    - name: Stop and disable the timers and the archiver
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - mysql-agy-endpoint.timer
+        - mysql-agy-heartbeat.timer
+        - mysql-agy-binlog-upload.timer
+        - mysql-agy-snapshot.timer
+        - mysql-agy-restore-check.timer
+        - mysql-agy-binlog-archive.service
+      failed_when: false
+
+    - name: Upload whatever binary-log material has not been uploaded yet
+      ansible.builtin.command: /usr/local/bin/mysql-agy-binlog-upload
+      failed_when: false
+      changed_when: true
+
+    - name: Leave the group cleanly so the survivors do not have to expel it
+      ansible.builtin.command:
+        argv:
+          - mysql
+          - --protocol=socket
+          - --user=root
+          - -e
+          - STOP GROUP_REPLICATION
+      failed_when: false
+      changed_when: true
+
+    - name: Stop MySQL
+      ansible.builtin.systemd_service:
+        name: mysql
+        state: stopped
+      failed_when: false

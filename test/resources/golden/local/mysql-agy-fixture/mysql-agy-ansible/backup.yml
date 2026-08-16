@@ -1,0 +1,389 @@
+---
+- name: Install the endpoint, heartbeat, backup and recovery agents
+  hosts: mysql
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+  tasks:
+    - name: Install the DigitalOcean token the endpoint agent needs
+      ansible.builtin.copy:
+        dest: /etc/mysql-agy/secrets.env
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          DO_TOKEN={{ lookup('env', 'COLORS_PAR_DO_TOKEN') }}
+      no_log: true
+
+    - name: Install the backup-bucket rclone remote
+      ansible.builtin.copy:
+        dest: /etc/mysql-agy/rclone.conf
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = {{ lookup('env', 'COLORS_PAR_BACKUP_R2_ACCESS_KEY_ID') }}
+          secret_access_key = {{ lookup('env', 'COLORS_PAR_BACKUP_R2_SECRET_ACCESS_KEY') }}
+          endpoint = https://example.r2.cloudflarestorage.com
+          region = auto
+          no_check_bucket = true
+      no_log: true
+
+    - name: Install the option file the binary-log archiver authenticates with
+      ansible.builtin.copy:
+        dest: /etc/mysql-agy/binlog-client.cnf
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          [client]
+          user = repl
+          password = {{ (lookup('env', 'COLORS_PAR_MYSQL_REPLICATION_PASSWORD') | hash('sha256'))[:32] }}
+
+          [mysqlbinlog]
+          get-server-public-key
+      no_log: true
+
+    - name: Install the shared helper library
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/mysql-agy-lib"
+        dest: /usr/local/lib/mysql-agy-lib
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install the agents
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - mysql-agy-endpoint
+        - mysql-agy-heartbeat
+        - mysql-agy-snapshot
+        - mysql-agy-binlog-archive
+        - mysql-agy-binlog-upload
+        - mysql-agy-restore-check
+        - mysql-agy-health
+
+    - name: Install the endpoint unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-endpoint.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Claim the mysql-agy client endpoint for this member
+          After=mysql.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/mysql-agy-endpoint
+      notify: Reload systemd
+
+    - name: Install the endpoint timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-endpoint.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Poll whether this member should hold the client endpoint
+          [Timer]
+          OnBootSec=30s
+          OnUnitActiveSec=10s
+          AccuracySec=1s
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Install the heartbeat unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-heartbeat.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Write one mysql-agy heartbeat on the primary
+          After=mysql.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/mysql-agy-heartbeat
+      notify: Reload systemd
+
+    - name: Install the heartbeat timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-heartbeat.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Keep the mysql-agy heartbeat advancing
+          [Timer]
+          OnBootSec=45s
+          OnUnitActiveSec=10s
+          AccuracySec=1s
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Install the binary-log archiver unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-binlog-archive.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Stream this member's binary log for point-in-time recovery
+          After=mysql.service
+          Wants=mysql.service
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/mysql-agy-binlog-archive
+          Restart=always
+          RestartSec=10s
+          [Install]
+          WantedBy=multi-user.target
+      notify: Reload systemd
+
+    - name: Install the binary-log upload unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-binlog-upload.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Move the mysql-agy binary-log spool to object storage
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/mysql-agy-binlog-upload
+      notify: Reload systemd
+
+    - name: Install the binary-log upload timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-binlog-upload.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Bound the point-in-time recovery window by this interval
+          [Timer]
+          OnBootSec=90s
+          OnUnitActiveSec=1min
+          AccuracySec=5s
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Install the snapshot unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-snapshot.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Publish one GTID-stamped mysql-agy snapshot
+          After=mysql.service
+          [Service]
+          Type=oneshot
+          TimeoutStartSec=3600
+          ExecStart=/usr/local/bin/mysql-agy-snapshot
+      notify: Reload systemd
+
+    - name: Install the snapshot timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-snapshot.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Daily mysql-agy snapshot
+          [Timer]
+          OnCalendar=*-*-* 01:00:00
+          Persistent=true
+          RandomizedDelaySec=60
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Install the restore-check unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-restore-check.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Rebuild a server from the published backup and assert it
+          After=mysql.service
+          [Service]
+          Type=oneshot
+          TimeoutStartSec=3600
+          ExecStart=/usr/local/bin/mysql-agy-restore-check
+      notify: Reload systemd
+
+    - name: Install the restore-check timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mysql-agy-restore-check.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Daily verified restore of the mysql-agy backup
+          [Timer]
+          OnCalendar=*-*-* 02:30:00
+          Persistent=true
+          RandomizedDelaySec=60
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Load the units before enabling them
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start the continuous agents
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: restarted
+      loop:
+        - mysql-agy-binlog-archive.service
+
+    - name: Enable the timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - mysql-agy-endpoint.timer
+        - mysql-agy-heartbeat.timer
+        - mysql-agy-binlog-upload.timer
+        - mysql-agy-snapshot.timer
+        - mysql-agy-restore-check.timer
+
+- name: Prove the backup chain end to end
+  hosts: bootstrap
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Let the heartbeat and the archiver get going
+      ansible.builtin.pause:
+        seconds: 45
+
+    - name: The heartbeat is advancing
+      ansible.builtin.command:
+        argv:
+          - mysql
+          - --protocol=socket
+          - --user=root
+          - -N
+          - -B
+          - -e
+          - >-
+            SELECT TIMESTAMPDIFF(SECOND, ts, UTC_TIMESTAMP())
+              FROM mysql_agy.heartbeat WHERE id = 1
+      register: heartbeat_age
+      until: heartbeat_age.rc == 0 and (heartbeat_age.stdout | trim | int) <= 60
+      retries: 12
+      delay: 5
+      changed_when: false
+
+- name: Publish a snapshot now
+  hosts: mysql
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Run the snapshot job
+      ansible.builtin.command: systemctl start mysql-agy-snapshot.service
+      register: snapshot_run
+      changed_when: true
+      failed_when: false
+
+    - name: How did it end
+      ansible.builtin.command: systemctl show -p Result --value mysql-agy-snapshot.service
+      register: snapshot_result
+      changed_when: false
+
+    - name: Why it failed
+      ansible.builtin.command: journalctl -u mysql-agy-snapshot.service -n 60 --no-pager
+      register: snapshot_journal
+      changed_when: false
+      when: snapshot_result.stdout | trim != 'success'
+
+    - name: Report the failure
+      ansible.builtin.fail:
+        msg: "{{ snapshot_journal.stdout_lines }}"
+      when: snapshot_result.stdout | trim != 'success'
+
+- name: Verify the published backup can be restored
+  hosts: mysql
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Let at least one binary-log upload cycle run after the snapshot
+      ansible.builtin.pause:
+        seconds: 90
+
+    - name: Run the verified restore
+      ansible.builtin.command: systemctl start mysql-agy-restore-check.service
+      register: restore_run
+      changed_when: true
+      failed_when: false
+
+    - name: How did it end
+      ansible.builtin.command: systemctl show -p Result --value mysql-agy-restore-check.service
+      register: restore_result
+      changed_when: false
+
+    - name: Why it failed
+      ansible.builtin.command: journalctl -u mysql-agy-restore-check.service -n 80 --no-pager
+      register: restore_journal
+      changed_when: false
+      when: restore_result.stdout | trim != 'success'
+
+    - name: Report the failure
+      ansible.builtin.fail:
+        msg: "{{ restore_journal.stdout_lines }}"
+      when: restore_result.stdout | trim != 'success'
+
+    - name: The published verdict
+      ansible.builtin.command: >-
+        rclone --config /etc/mysql-agy/rclone.conf cat
+        r2:{{ backup_bucket }}/{{ backup_prefix }}/restore-check/latest.json
+      vars:
+        backup_bucket: "mysql-agy-fixture-backup"
+        backup_prefix: "mysql-agy-fixture"
+      register: restore_verdict
+      changed_when: false
+      failed_when: false
+
+    - name: Show it
+      ansible.builtin.debug:
+        msg: "{{ restore_verdict.stdout }}"
+      when: restore_verdict.stdout | default('') | length > 0

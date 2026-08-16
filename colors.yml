@@ -1,0 +1,52 @@
+# Default package desired state for mysql-agy.
+profile: mysql-agy
+workdir: .colors
+
+provider-compute: digitalocean
+provider-dns: cloudflare
+provider-backend: r2
+
+compute-prevent-destroy: true
+
+cluster-host: mysql-agy.bigconfig.online
+cluster-nodes: 3
+
+digitalocean-name: mysql-agy
+digitalocean-region: ams3
+digitalocean-size: s-2vcpu-4gb
+digitalocean-image: ubuntu-24-04-x64
+digitalocean-ssh-keys: "58495393"
+digitalocean-ssh-private-key: ~/.ssh/id_ed25519
+digitalocean-ssh-sources:
+  - 129.159.242.163/32
+digitalocean-client-sources:
+  - 129.159.242.163/32
+digitalocean-vpc-mode: default
+
+cloudflare-zone: bigconfig.online
+cloudflare-proxied: false
+
+mysql-port: 3306
+mysql-group-port: 33061
+mysql-group-name: c23d4e8b-1234-4567-89ab-cdef01234567
+
+mysql-admin-user: admin
+mysql-replication-user: repl
+mysql-innodb-buffer-pool-size: 1G
+
+backup-r2-bucket: mysql-agy-backup
+backup-r2-endpoint: https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com
+backup-r2-region: auto
+backup-r2-prefix: mysql-agy
+
+backup-snapshot-oncalendar: "*-*-* 01:00:00"
+backup-restore-check-oncalendar: "*-*-* 02:30:00"
+backup-binlog-upload-interval: 1min
+backup-retention-days: 14
+backup-restore-max-lag-seconds: 900
+
+heartbeat-interval: 10s
+endpoint-poll-interval: 10s
+
+r2-bucket: tofu-state-319271fed8bc6d2d9059362be1165f37-eu
+r2-endpoint: https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com

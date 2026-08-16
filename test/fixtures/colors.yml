@@ -1,0 +1,52 @@
+# Golden and unit test fixture for mysql-agy.
+profile: mysql-agy-fixture
+workdir: .colors
+
+provider-compute: digitalocean
+provider-dns: cloudflare
+provider-backend: local
+
+compute-prevent-destroy: true
+
+cluster-host: my-ha.fixture.example
+cluster-nodes: 3
+
+digitalocean-name: fixture
+digitalocean-region: ams3
+digitalocean-size: s-2vcpu-4gb
+digitalocean-image: ubuntu-24-04-x64
+digitalocean-ssh-keys: "12345678"
+digitalocean-ssh-private-key: ~/.ssh/id_ed25519
+digitalocean-ssh-sources:
+  - 203.0.113.10/32
+digitalocean-client-sources:
+  - 203.0.113.0/24
+digitalocean-vpc-mode: default
+
+cloudflare-zone: fixture.example
+cloudflare-proxied: false
+
+mysql-port: 3306
+mysql-group-port: 33061
+mysql-group-name: 00000000-1111-2222-3333-444444444444
+
+mysql-admin-user: admin
+mysql-replication-user: repl
+mysql-innodb-buffer-pool-size: 1G
+
+backup-r2-bucket: mysql-agy-fixture-backup
+backup-r2-endpoint: https://example.r2.cloudflarestorage.com
+backup-r2-region: auto
+backup-r2-prefix: mysql-agy-fixture
+
+backup-snapshot-oncalendar: "*-*-* 01:00:00"
+backup-restore-check-oncalendar: "*-*-* 02:30:00"
+backup-binlog-upload-interval: 1min
+backup-retention-days: 14
+backup-restore-max-lag-seconds: 900
+
+heartbeat-interval: 10s
+endpoint-poll-interval: 10s
+
+r2-bucket: tofu-state-fixture
+r2-endpoint: https://example.r2.cloudflarestorage.com
