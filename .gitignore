@@ -10,3 +10,8 @@ pom.xml
 classes/
 target/
 *.jar
+node_modules/
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc

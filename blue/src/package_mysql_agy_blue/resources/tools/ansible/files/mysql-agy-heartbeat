@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Managed by Colors mysql-agy — write one heartbeat on the primary.
+set -euo pipefail
+
+# shellcheck source=/dev/null
+. /usr/local/lib/mysql-agy-lib
+
+is_primary || exit 0
+
+mysql --protocol=socket --user=root <<SQL
+INSERT INTO mysql_agy.heartbeat (id, ts, node) VALUES (1, NOW(6), '${NODE_NAME}')
+  ON DUPLICATE KEY UPDATE ts = NOW(6), node = '${NODE_NAME}';
+INSERT INTO mysql_agy.beat_log (ts, node) VALUES (NOW(6), '${NODE_NAME}');
+DELETE FROM mysql_agy.beat_log WHERE ts < NOW() - INTERVAL 2 DAY;
+SQL

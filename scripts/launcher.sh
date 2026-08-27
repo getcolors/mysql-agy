@@ -44,6 +44,17 @@ for verb in build create delete health; do
 done
 ok 'lifecycle and health commands are dispatchable'
 
-[ -L "$root/green" ] && [ "$(readlink "$root/green")" = skills/package-mysql-agy-green/green ] || fail 'root green is not the payload symlink'
-ok 'root launcher is the payload symlink'
+[ -L "$root/green/green" ] && [ "$(readlink "$root/green/green")" = ../skills/package-mysql-agy-green/green ] || fail 'green/green is not the payload symlink'
+[ -L "$root/red/red" ] && [ "$(readlink "$root/red/red")" = ../skills/package-mysql-agy-red/red ] || fail 'red/red is not the payload symlink'
+[ -L "$root/blue/blue" ] && [ "$(readlink "$root/blue/blue")" = ../skills/package-mysql-agy-blue/blue ] || fail 'blue/blue is not the payload symlink'
+ok 'each colour launcher is its payload symlink'
+
+for payload in "$root/skills/package-mysql-agy-red/red" "$root/skills/package-mysql-agy-blue/blue"; do
+  [ -f "$payload" ] || fail "payload launcher is missing: $payload"
+done
+grep -q '"package-mysql-agy-red": null,\|"package-mysql-agy-red": "github:getcolors/mysql-agy#' \
+  "$root/skills/package-mysql-agy-red/red" || fail 'red payload has no managed pin site'
+grep -q '# dependencies = \[\]\|package-mysql-agy-blue = { git' \
+  "$root/skills/package-mysql-agy-blue/blue" || fail 'blue payload has no managed pin site'
+ok 'red and blue payloads carry managed pin sites'
 echo "launcher: $checks checks passed"

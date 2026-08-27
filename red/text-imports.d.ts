@@ -1,0 +1,14 @@
+declare module "*.tf" { const content: string; export default content; }
+declare module "*.yml" { const content: string; export default content; }
+declare module "*.cfg" { const content: string; export default content; }
+declare module "*.cnf" { const content: string; export default content; }
+declare module "*.env" { const content: string; export default content; }
+declare module "*/apparmor-local" { const content: string; export default content; }
+declare module "*/mysql-agy-lib" { const content: string; export default content; }
+declare module "*/mysql-agy-endpoint" { const content: string; export default content; }
+declare module "*/mysql-agy-heartbeat" { const content: string; export default content; }
+declare module "*/mysql-agy-snapshot" { const content: string; export default content; }
+declare module "*/mysql-agy-binlog-archive" { const content: string; export default content; }
+declare module "*/mysql-agy-binlog-upload" { const content: string; export default content; }
+declare module "*/mysql-agy-restore-check" { const content: string; export default content; }
+declare module "*/mysql-agy-health" { const content: string; export default content; }

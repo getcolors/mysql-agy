@@ -20,7 +20,12 @@
   1)
 
 ;; Managed by `bb pin` — do not edit by hand.
-(def ^:private mysql-agy-sha "3630a9464a6d41d93adc37d1b6bd261450a53868")
+;;
+;; nil before this repository has been pushed and stamped: a launcher that
+;; cannot resolve its own library says so rather than inventing a SHA or
+;; silently falling back to whatever is lying around. `bb pin` refuses to stamp
+;; a dirty or unpushed HEAD for the same reason.
+(def ^:private mysql-agy-sha nil)
 
 (def ^:private mysql-agy-git-url "https://github.com/getcolors/mysql-agy.git")
 (def ^:private green-git-url "https://github.com/getcolors/green.git")
@@ -28,7 +33,7 @@
 (defn- lib-coord
   [env-var url sha deps-root]
   (if-let [root (System/getenv env-var)]
-    {:local/root root}
+    {:local/root (if deps-root (str (io/file root deps-root)) root)}
     (when sha
       (cond-> {:git/url url :git/sha sha}
         deps-root (assoc :deps/root deps-root)))))
@@ -38,7 +43,7 @@
 
 (def ^:private bootstrap-error
   (when (and (System/getProperty "babashka.version") (not resolved?))
-    (let [mysql-agy (lib-coord "MYSQL_AGY_LIB_ROOT" mysql-agy-git-url mysql-agy-sha nil)
+    (let [mysql-agy (lib-coord "MYSQL_AGY_LIB_ROOT" mysql-agy-git-url mysql-agy-sha "green")
           green (lib-coord "GREEN_LIB_ROOT" green-git-url nil nil)]
       (if-not mysql-agy
         (str "this launcher carries no mysql-agy pin.\n"

@@ -5,6 +5,7 @@
   packages = with pkgs; [
     ansible
     babashka
+    bun
     curl
     doctl
     git
@@ -12,6 +13,7 @@
     mariadb-client
     openssh
     rclone
+    uv
     zstd
   ];
 }
