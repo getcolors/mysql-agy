@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 // directory, which would halt Bun's upward resolution of `package-mysql-agy-red`
 // and break the development symlink at red/red.
 const PINS = {
-  "package-mysql-agy-red": null,
+  "package-mysql-agy-red": "github:getcolors/mysql-agy#3d0ccf47beb1c1046c96a8e6df27430d4f98bbae",
   "red": "github:getcolors/red#db9bfe61282e2093f4098bf5a6ee0cd10added6e",
 };
 

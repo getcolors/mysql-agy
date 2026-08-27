@@ -1,25 +1,17 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["package-mysql-agy-blue", "blue"]
+#
+# [tool.uv.sources]
+# package-mysql-agy-blue = { git = "https://github.com/getcolors/mysql-agy.git", rev = "3d0ccf47beb1c1046c96a8e6df27430d4f98bbae", subdirectory = "blue" }
+# blue = { git = "https://github.com/getcolors/blue.git", rev = "290f313ead5ca162875c33a049c880da017eae09" }
 # ///
 #
 # Managed by `bb pin` — do not edit by hand, and never invent a SHA.
 #
-# UNPINNED: this repository has not been pushed and stamped, so the inline
-# metadata above deliberately carries no package-mysql-agy-blue git source. A
-# launcher that cannot resolve its own library says so rather than inventing a
-# SHA or silently falling back to whatever is lying around; `bb pin` refuses to
-# stamp a dirty or unpushed HEAD for the same reason. Once stamped, the block
-# above reads:
-#
-#   # dependencies = ["package-mysql-agy-blue", "blue"]
-#   #
-#   # [tool.uv.sources]
-#   # package-mysql-agy-blue = { git = "https://github.com/getcolors/mysql-agy.git", rev = "<sha stamped by bb pin>", subdirectory = "blue" }
-#   # blue = { git = "https://github.com/getcolors/blue.git", rev = "290f313ead5ca162875c33a049c880da017eae09" }
-#
-# Point it at a checkout meanwhile: MYSQL_AGY_LIB_ROOT=/path/to/mysql-agy
+# Stamped by `bb pin`. MYSQL_AGY_LIB_ROOT=/path/to/mysql-agy still overrides the
+# pin with a working tree.
 """Thin launcher for package-mysql-agy-blue.
 
 This file is both the skill payload and the repository entry point —
