@@ -4,7 +4,7 @@
 # dependencies = ["package-mysql-agy-blue", "blue"]
 #
 # [tool.uv.sources]
-# package-mysql-agy-blue = { git = "https://github.com/getcolors/mysql-agy.git", rev = "3d0ccf47beb1c1046c96a8e6df27430d4f98bbae", subdirectory = "blue" }
+# package-mysql-agy-blue = { git = "https://github.com/getcolors/mysql-agy.git", rev = "1cb1426a8052a801d3e528f5d26bd4e727f85fa9", subdirectory = "blue" }
 # blue = { git = "https://github.com/getcolors/blue.git", rev = "290f313ead5ca162875c33a049c880da017eae09" }
 #
 # [tool.uv]
