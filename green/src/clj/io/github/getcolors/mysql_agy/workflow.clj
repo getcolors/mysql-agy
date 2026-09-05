@@ -18,6 +18,8 @@
             [green.progress :as progress]
             [green.workflow :as wf]
             [io.github.getcolors.once.compute-cluster :as cluster]
+            [io.github.getcolors.mysql-agy.ssh :as ssh]
+            [io.github.getcolors.mysql-agy.ssh-config :as ssh-config]
             [io.github.getcolors.mysql-agy.tools :as tools]
             [io.github.getcolors.mysql-agy.validate :as validate]))
 
@@ -71,20 +73,40 @@
             [(str "compute destruction is protected; set "
                   (green-cli/par-name :compute-prevent-destroy) "=false to delete")]))]
        :after-validate
-       (fn [opts _ ctx]
-         (cond-> (assoc opts :green/exit 0)
-           (real-credential-event? ctx) (assoc :mysql-agy/state state)))}
+       ;; The machine key's create matrix and the DigitalOcean preflight run
+       ;; before any template is rendered: an unowned key on disk or at the
+       ;; provider stops the run while stopping is still free. Every other
+       ;; event fills the same template values — a destroy renders before it
+       ;; destroys, a health reaches the members with the key — but checks no
+       ;; key, because the delete's key cleanup runs after the compute destroy.
+       (fn [opts _ {:keys [event real?] :as ctx}]
+         (let [opts (cond-> opts (real-credential-event? ctx) (assoc :mysql-agy/state state))]
+           (if (and real? (= :create event))
+             (let [opts (ssh/ensure-key! opts (fn [_] (:params state)))]
+               (if (wf/failed? opts)
+                 opts
+                 (let [opts (ssh/preflight! (ssh/with-machine-key opts))
+                       opts (if (wf/failed? opts) opts (ssh-config/preflight! opts))]
+                   (if (wf/failed? opts) opts (assoc opts :green/exit 0)))))
+             (assoc (ssh/with-machine-key opts) :green/exit 0))))}
       env))))
 
 (defn wire-fn [step run-opts]
   (case (:green/event run-opts)
     :delete
+    ;; The `~/.ssh/config` block goes before the destroy, the keypair after it.
+    ;; A block that outlives its host is stale but harmless; a key that
+    ;; predeceases its host locks the operator out of members that still
+    ;; exist. Both orders are deliberate — standards/ssh-config.md §4 is
+    ;; explicit that they must not be tidied into agreement.
     (case step
       :mysql-agy/start [start-step :mysql-agy/load-infrastructure]
       :mysql-agy/load-infrastructure [tools/load-infrastructure-step :mysql-agy/cleanup]
-      :mysql-agy/cleanup [tools/cleanup-step :mysql-agy/dns]
+      :mysql-agy/cleanup [tools/cleanup-step :mysql-agy/ansible-local]
+      :mysql-agy/ansible-local [tools/ansible-local-step :mysql-agy/dns]
       :mysql-agy/dns [tools/dns-step :mysql-agy/infrastructure]
-      :mysql-agy/infrastructure [tools/infrastructure-step])
+      :mysql-agy/infrastructure [tools/infrastructure-step :mysql-agy/ssh-cleanup]
+      :mysql-agy/ssh-cleanup [ssh/cleanup-step])
 
     :health
     (case step
@@ -92,9 +114,12 @@
       :mysql-agy/load-infrastructure [tools/load-infrastructure-step :mysql-agy/health]
       :mysql-agy/health [tools/health-step])
 
+    ;; The block is written after compute, where the addresses first exist,
+    ;; and before the members are converged (ssh-config.md §4).
     (case step
       :mysql-agy/start [start-step :mysql-agy/infrastructure]
-      :mysql-agy/infrastructure [tools/infrastructure-step :mysql-agy/dns :mysql-agy/base]
+      :mysql-agy/infrastructure [tools/infrastructure-step :mysql-agy/ansible-local]
+      :mysql-agy/ansible-local [tools/ansible-local-step :mysql-agy/dns :mysql-agy/base]
       :mysql-agy/dns [tools/dns-step :mysql-agy/cluster]
       :mysql-agy/base [tools/base-step :mysql-agy/cluster]
       :mysql-agy/cluster [tools/cluster-step :mysql-agy/backup]
@@ -108,9 +133,9 @@
   (tools/backend-advice tool))
 
 (def side-effecting
-  [:mysql-agy/infrastructure :mysql-agy/load-infrastructure :mysql-agy/dns
-   :mysql-agy/base :mysql-agy/cluster :mysql-agy/backup :mysql-agy/health
-   :mysql-agy/cleanup])
+  [:mysql-agy/infrastructure :mysql-agy/load-infrastructure :mysql-agy/ansible-local
+   :mysql-agy/dns :mysql-agy/base :mysql-agy/cluster :mysql-agy/backup
+   :mysql-agy/health :mysql-agy/cleanup :mysql-agy/ssh-cleanup])
 
 (def workflow
   (-> (reduce (fn [w tool]

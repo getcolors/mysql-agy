@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Managed by Colors mysql-agy — move the binary-log spool to R2.
+set -euo pipefail
+
+# shellcheck source=/dev/null
+. /usr/local/lib/mysql-agy-lib
+
+[ -d "$BINLOG_SPOOL" ] || exit 0
+
+rc copy "$BINLOG_SPOOL" "$(remote)/binlog/${NODE_NAME}/" --include 'binlog.*'
+
+find "$BINLOG_SPOOL" -maxdepth 1 -type f -name 'binlog.[0-9]*' \
+  -mtime "+${BACKUP_RETENTION_DAYS}" -delete

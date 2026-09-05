@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 from blue.workflow import StepError
-from conftest import CREDENTIALS, ROOT, fixture
-from package_mysql_agy_blue import tools, workflow
+from conftest import CREDENTIALS, ROOT, fixture, optout
+from package_mysql_agy_blue import ssh, tools, workflow
 from package_mysql_agy_blue.cli import run
 
 CREATE = {"blue/event": "create"}
@@ -58,9 +58,13 @@ def nexts(step: str, run_opts: dict) -> list[str]:
     return list((workflow.wire_fn(step, run_opts) or ())[1:])
 
 
-def test_create_forks_at_the_infrastructure_and_joins_at_the_cluster():
+def test_create_forks_after_the_local_ssh_config_and_joins_at_the_cluster():
     assert nexts("mysql-agy/start", CREATE) == ["mysql-agy/infrastructure"]
-    assert nexts("mysql-agy/infrastructure", CREATE) == ["mysql-agy/dns", "mysql-agy/base"]
+    # The block is written after compute, where the addresses first exist,
+    # and before any member is converged.
+    assert nexts("mysql-agy/infrastructure", CREATE) == ["mysql-agy/ansible-local"]
+    assert workflow.wire_fn("mysql-agy/ansible-local", CREATE)[0] is tools.ansible_local_step
+    assert nexts("mysql-agy/ansible-local", CREATE) == ["mysql-agy/dns", "mysql-agy/base"]
     # Both branches converge on one step, so the engine joins them once.
     assert nexts("mysql-agy/dns", CREATE) == ["mysql-agy/cluster"]
     assert nexts("mysql-agy/base", CREATE) == ["mysql-agy/cluster"]
@@ -70,17 +74,37 @@ def test_create_forks_at_the_infrastructure_and_joins_at_the_cluster():
 
 
 def test_build_walks_the_same_graph_as_create():
-    for step in ["mysql-agy/start", "mysql-agy/infrastructure", "mysql-agy/dns",
-                 "mysql-agy/base", "mysql-agy/cluster", "mysql-agy/backup"]:
+    for step in ["mysql-agy/start", "mysql-agy/infrastructure", "mysql-agy/ansible-local",
+                 "mysql-agy/dns", "mysql-agy/base", "mysql-agy/cluster", "mysql-agy/backup"]:
         assert nexts(step, BUILD) == nexts(step, CREATE)
 
 
 def test_delete_reads_state_first_and_destroys_in_reverse():
     assert nexts("mysql-agy/start", DELETE) == ["mysql-agy/load-infrastructure"]
     assert nexts("mysql-agy/load-infrastructure", DELETE) == ["mysql-agy/cleanup"]
-    assert nexts("mysql-agy/cleanup", DELETE) == ["mysql-agy/dns"]
+    # The ssh config block goes before the destroy, the keypair after it
+    # (ssh-config.md §4).
+    assert nexts("mysql-agy/cleanup", DELETE) == ["mysql-agy/ansible-local"]
+    assert nexts("mysql-agy/ansible-local", DELETE) == ["mysql-agy/dns"]
     assert nexts("mysql-agy/dns", DELETE) == ["mysql-agy/infrastructure"]
-    assert nexts("mysql-agy/infrastructure", DELETE) == []
+    assert nexts("mysql-agy/infrastructure", DELETE) == ["mysql-agy/ssh-cleanup"]
+    assert workflow.wire_fn("mysql-agy/ssh-cleanup", DELETE)[0] is ssh.cleanup_step
+    assert nexts("mysql-agy/ssh-cleanup", DELETE) == []
+
+
+async def test_a_build_fills_the_placeholder_key_paths():
+    # Every event fills the machine-key paths in preflight so the templates
+    # and the inventory render the same whichever step scaffolds them; a build
+    # gets the fixed placeholder, never the operator's home.
+    r = await workflow.start_step(fixture(BUILD), env={})
+    assert r["blue/exit"] == 0
+    assert r["ssh-private-key-path"] == "/home/build-placeholder/.ssh/mysql-agy-fixture"
+    assert r["ssh-keygen"] is True
+    # Opt-out invents no key path.
+    o = await workflow.start_step(optout(BUILD), env={})
+    assert o["blue/exit"] == 0
+    assert "ssh-private-key-path" not in o
+    assert "ssh-keygen" not in o
 
 
 def test_health_changes_nothing():
@@ -270,7 +294,7 @@ async def test_a_whole_build_renders_every_stage():
     result = await run("build", "-f", str(ROOT / "test" / "fixtures" / "colors.yml"))
     assert result["blue/exit"] == 0
     root = ROOT / "test" / "fixtures" / ".colors" / "mysql-agy-fixture"
-    for stage in ["mysql-agy-infrastructure", "mysql-agy-dns", "mysql-agy-ansible"]:
+    for stage in ["mysql-agy-infrastructure", "mysql-agy-ansible-local", "mysql-agy-dns", "mysql-agy-ansible"]:
         assert (root / stage).is_dir(), stage
     # The backend is written by advice, before the stage runs.
     assert (root / "mysql-agy-infrastructure" / "backend.tf.json").exists()

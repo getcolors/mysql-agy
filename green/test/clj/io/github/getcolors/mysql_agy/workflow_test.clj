@@ -4,11 +4,15 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [green.cli :as green-cli]
+            [io.github.getcolors.mysql-agy.ssh :as ssh]
             [io.github.getcolors.mysql-agy.tools :as tools]
             [io.github.getcolors.mysql-agy.workflow :as workflow]))
 
 (def fixture
   (green-cli/read-state "colors.yml" (slurp "test/fixtures/colors.yml")))
+
+(def optout
+  (green-cli/read-state "optout.yml" (slurp "test/fixtures/optout.yml")))
 
 (def create {:green/event :create})
 (def build {:green/event :build})
@@ -49,9 +53,12 @@
 (defn- nexts [step run-opts]
   (vec (rest (workflow/wire-fn step run-opts))))
 
-(deftest create-forks-at-the-infrastructure-and-joins-at-the-cluster
+(deftest create-forks-after-the-local-ssh-config-and-joins-at-the-cluster
   (is (= [:mysql-agy/infrastructure] (nexts :mysql-agy/start create)))
-  (is (= [:mysql-agy/dns :mysql-agy/base] (nexts :mysql-agy/infrastructure create)))
+  (testing "the block is written after compute, where the addresses first exist, and before any member is converged"
+    (is (= [:mysql-agy/ansible-local] (nexts :mysql-agy/infrastructure create)))
+    (is (= tools/ansible-local-step (first (workflow/wire-fn :mysql-agy/ansible-local create)))))
+  (is (= [:mysql-agy/dns :mysql-agy/base] (nexts :mysql-agy/ansible-local create)))
   (testing "both branches converge on one step, so the engine joins them once"
     (is (= [:mysql-agy/cluster] (nexts :mysql-agy/dns create)))
     (is (= [:mysql-agy/cluster] (nexts :mysql-agy/base create))))
@@ -60,16 +67,34 @@
   (is (= [] (nexts :mysql-agy/health create))))
 
 (deftest build-walks-the-same-graph-as-create
-  (doseq [step [:mysql-agy/start :mysql-agy/infrastructure :mysql-agy/dns
-                :mysql-agy/base :mysql-agy/cluster :mysql-agy/backup]]
+  (doseq [step [:mysql-agy/start :mysql-agy/infrastructure :mysql-agy/ansible-local
+                :mysql-agy/dns :mysql-agy/base :mysql-agy/cluster :mysql-agy/backup]]
     (is (= (nexts step create) (nexts step build)))))
 
 (deftest delete-reads-state-first-and-destroys-in-reverse
   (is (= [:mysql-agy/load-infrastructure] (nexts :mysql-agy/start delete)))
   (is (= [:mysql-agy/cleanup] (nexts :mysql-agy/load-infrastructure delete)))
-  (is (= [:mysql-agy/dns] (nexts :mysql-agy/cleanup delete)))
-  (is (= [:mysql-agy/infrastructure] (nexts :mysql-agy/dns delete)))
-  (is (= [] (nexts :mysql-agy/infrastructure delete))))
+  (testing "the ssh config block goes before the destroy, the keypair after it (ssh-config.md §4)"
+    (is (= [:mysql-agy/ansible-local] (nexts :mysql-agy/cleanup delete)))
+    (is (= [:mysql-agy/dns] (nexts :mysql-agy/ansible-local delete)))
+    (is (= [:mysql-agy/infrastructure] (nexts :mysql-agy/dns delete)))
+    (is (= [:mysql-agy/ssh-cleanup] (nexts :mysql-agy/infrastructure delete)))
+    (is (= ssh/cleanup-step (first (workflow/wire-fn :mysql-agy/ssh-cleanup delete))))
+    (is (= [] (nexts :mysql-agy/ssh-cleanup delete)))))
+
+(deftest a-build-fills-the-placeholder-key-paths
+  ;; Every event fills the machine-key paths in preflight so the templates and
+  ;; the inventory render the same whichever step scaffolds them; a build gets
+  ;; the fixed placeholder, never the operator's home.
+  (let [r (workflow/start-step (assoc fixture :green/event :build) {})]
+    (is (= 0 (:green/exit r)))
+    (is (= "/home/build-placeholder/.ssh/mysql-agy-fixture" (:ssh-private-key-path r)))
+    (is (true? (:ssh-keygen r))))
+  (testing "opt-out invents no key path"
+    (let [r (workflow/start-step (assoc optout :green/event :build) {})]
+      (is (= 0 (:green/exit r)))
+      (is (nil? (:ssh-private-key-path r)))
+      (is (nil? (:ssh-keygen r))))))
 
 (deftest health-changes-nothing
   (is (= [:mysql-agy/load-infrastructure] (nexts :mysql-agy/start health)))
@@ -243,7 +268,7 @@
         _ (is (= 0 (:green/exit result)))
         root (io/file "test/fixtures/.colors/mysql-agy-fixture")]
     (io/delete-file (io/file dir) true)
-    (doseq [stage ["mysql-agy-infrastructure" "mysql-agy-dns" "mysql-agy-ansible"]]
+    (doseq [stage ["mysql-agy-infrastructure" "mysql-agy-ansible-local" "mysql-agy-dns" "mysql-agy-ansible"]]
       (is (.isDirectory (io/file root stage)) stage))
     (testing "the backend is written by advice, before the stage runs"
       (is (.exists (io/file root "mysql-agy-infrastructure" "backend.tf.json")))

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Managed by Colors mysql-agy — continuous point-in-time recovery material.
+set -euo pipefail
+
+# shellcheck source=/dev/null
+. /usr/local/lib/mysql-agy-lib
+
+mkdir -p "$BINLOG_SPOOL"
+wait_for_mysql 150 || { log "local server never became reachable"; exit 1; }
+
+resume=$(find "$BINLOG_SPOOL" -maxdepth 1 -type f -name 'binlog.[0-9]*' -printf '%f\n' \
+         2>/dev/null | sort | tail -1)
+
+if [ -z "${resume:-}" ]; then
+  resume=$(q "SHOW BINARY LOGS" | head -1 | cut -f1)
+fi
+
+if [ -z "${resume:-}" ]; then
+  log "the server reports no binary logs"
+  exit 1
+fi
+
+log "streaming from ${resume} into ${BINLOG_SPOOL}"
+exec mysqlbinlog \
+  --defaults-file="$MYSQL_HA_ETC/binlog-client.cnf" \
+  --read-from-remote-server \
+  --host=127.0.0.1 --port="$MYSQL_PORT" \
+  --raw --stop-never \
+  --connection-server-id="$CONNECTION_SERVER_ID" \
+  --result-file="$BINLOG_SPOOL/" \
+  "$resume"

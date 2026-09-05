@@ -15,8 +15,10 @@ import { parName, readPars } from "red/cli";
 import * as dryRun from "red/dry-run";
 import { preflight, type PreflightContext } from "red/lifecycle";
 import * as progress from "red/progress";
-import { adviceAdd, workflow, type Opts, type WireDecl } from "red/workflow";
+import { adviceAdd, failed, workflow, type Opts, type WireDecl } from "red/workflow";
 import { compute, computeCluster } from "package-once-red";
+import * as ssh from "./ssh.ts";
+import * as sshConfig from "./ssh-config.ts";
 import * as tools from "./tools.ts";
 import * as validate from "./validate.ts";
 
@@ -74,20 +76,41 @@ export async function startStep(
           ? [`compute destruction is protected; set ${parName("compute-prevent-destroy")}=false to delete`]
           : [],
     ],
-    afterValidate: (current, _environment, ctx) => (realCredentialEvent(ctx)
-      ? { ...current, "red/exit": 0, "mysql-agy/state": state }
-      : { ...current, "red/exit": 0 }),
+    // The machine key's create matrix and the DigitalOcean preflight run
+    // before any template is rendered: an unowned key on disk or at the
+    // provider stops the run while stopping is still free. Every other event
+    // fills the same template values — a destroy renders before it destroys, a
+    // health reaches the members with the key — but checks no key, because the
+    // delete's key cleanup runs after the compute destroy.
+    afterValidate: async (current, _environment, ctx) => {
+      const handed = realCredentialEvent(ctx) ? { ...current, "mysql-agy/state": state } : current;
+      if (ctx.real && ctx.event === "create") {
+        let next = await ssh.ensureKey(handed, async () => state.params);
+        if (failed(next)) return next;
+        next = await ssh.preflight(ssh.withMachineKey(next));
+        if (!failed(next)) next = sshConfig.preflight(next);
+        return failed(next) ? next : { ...next, "red/exit": 0 };
+      }
+      return { ...ssh.withMachineKey(handed), "red/exit": 0 };
+    },
   }, env);
 }
 
 export function wireFn(step: string, runOpts: Opts): WireDecl | undefined {
   if (runOpts["red/event"] === "delete") {
+    // The `~/.ssh/config` block goes before the destroy, the keypair after it.
+    // A block that outlives its host is stale but harmless; a key that
+    // predeceases its host locks the operator out of members that still exist.
+    // Both orders are deliberate — standards/ssh-config.md §4 is explicit that
+    // they must not be tidied into agreement.
     const graph: Record<string, WireDecl> = {
       "mysql-agy/start": [startStep, "mysql-agy/load-infrastructure"],
       "mysql-agy/load-infrastructure": [tools.loadInfrastructureStep, "mysql-agy/cleanup"],
-      "mysql-agy/cleanup": [tools.cleanupStep, "mysql-agy/dns"],
+      "mysql-agy/cleanup": [tools.cleanupStep, "mysql-agy/ansible-local"],
+      "mysql-agy/ansible-local": [tools.ansibleLocalStep, "mysql-agy/dns"],
       "mysql-agy/dns": [tools.dnsStep, "mysql-agy/infrastructure"],
-      "mysql-agy/infrastructure": [tools.infrastructureStep],
+      "mysql-agy/infrastructure": [tools.infrastructureStep, "mysql-agy/ssh-cleanup"],
+      "mysql-agy/ssh-cleanup": [ssh.cleanupStep],
     };
     return graph[step];
   }
@@ -99,9 +122,12 @@ export function wireFn(step: string, runOpts: Opts): WireDecl | undefined {
     };
     return graph[step];
   }
+  // The block is written after compute, where the addresses first exist, and
+  // before the members are converged (ssh-config.md §4).
   const graph: Record<string, WireDecl> = {
     "mysql-agy/start": [startStep, "mysql-agy/infrastructure"],
-    "mysql-agy/infrastructure": [tools.infrastructureStep, "mysql-agy/dns", "mysql-agy/base"],
+    "mysql-agy/infrastructure": [tools.infrastructureStep, "mysql-agy/ansible-local"],
+    "mysql-agy/ansible-local": [tools.ansibleLocalStep, "mysql-agy/dns", "mysql-agy/base"],
     "mysql-agy/dns": [tools.dnsStep, "mysql-agy/cluster"],
     "mysql-agy/base": [tools.baseStep, "mysql-agy/cluster"],
     "mysql-agy/cluster": [tools.clusterStep, "mysql-agy/backup"],
@@ -118,9 +144,9 @@ export function backendAdvice(tool: string) {
 }
 
 export const sideEffecting = [
-  "mysql-agy/infrastructure", "mysql-agy/load-infrastructure", "mysql-agy/dns",
-  "mysql-agy/base", "mysql-agy/cluster", "mysql-agy/backup", "mysql-agy/health",
-  "mysql-agy/cleanup",
+  "mysql-agy/infrastructure", "mysql-agy/load-infrastructure", "mysql-agy/ansible-local",
+  "mysql-agy/dns", "mysql-agy/base", "mysql-agy/cluster", "mysql-agy/backup",
+  "mysql-agy/health", "mysql-agy/cleanup", "mysql-agy/ssh-cleanup",
 ];
 
 function create() {

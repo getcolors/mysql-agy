@@ -13,6 +13,18 @@ A tri-colour Package Skill: the canonical Clojure/Babashka implementation lives 
   - Continuous binary log replication via `mysqlbinlog --stop-never` uploaded every minute.
   - Automated verification drill running in an isolated scratch instance verifying snapshot + PITR replay and lag assertions.
 - **Health**: Built-in `./green health` assertions run directly against all cluster members.
+- **SSH access**: the deployment owns its machine keypair (the workspace SSH
+  Keypair Standard, keygen mode). With no `digitalocean-ssh-keys` in
+  `colors.yml`, the first real `create` generates `~/.ssh/<profile>` and
+  `~/.ssh/<profile>.pub`, registers the public key at DigitalOcean under the
+  profile's name, and `delete` removes the key last, after the droplets are
+  gone. Supplying `digitalocean-ssh-keys` (and then
+  `digitalocean-ssh-private-key`, the path to its private half) opts out:
+  the package uses the listed key ids and touches no key material.
+- **`ssh <profile>`**: `create` writes one managed block into `~/.ssh/config`
+  with an alias per member — `<profile>` for member one, `<profile>-0`,
+  `<profile>-1`, `<profile>-2` — and `delete` removes it before the destroy
+  (the workspace SSH Config Standard).
 
 ## Development & Usage
 

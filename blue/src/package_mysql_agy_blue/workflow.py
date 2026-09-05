@@ -19,10 +19,10 @@ import os
 from blue import dry_run, progress
 from blue.cli import par_name, read_pars
 from blue.lifecycle import preflight
-from blue.workflow import advice_add, workflow
+from blue.workflow import advice_add, failed, workflow
 from package_once_blue import compute_cluster as cluster
 
-from . import tools, validate
+from . import ssh, ssh_config, tools, validate
 
 DEFAULTS = {"compute-prevent-destroy": True,
             "provider-compute": validate.default_compute_provider,
@@ -57,11 +57,28 @@ async def start_step(original: dict, env: dict | None = None, reader=None) -> di
             and not validate.state_errors(overlaid)):
         state = await cluster.read_state(overlaid, reader)
 
-    def after(opts, _env, ctx):
-        result = {**opts, "blue/exit": 0}
-        if _real_credential_event(ctx):
-            result["mysql-agy/state"] = state
-        return result
+    # The machine key's create matrix and the DigitalOcean preflight run
+    # before any template is rendered: an unowned key on disk or at the
+    # provider stops the run while stopping is still free. Every other event
+    # fills the same template values — a destroy renders before it destroys,
+    # a health reaches the members with the key — but checks no key, because
+    # the delete's key cleanup runs after the compute destroy.
+    async def after(opts, _env, ctx):
+        handed = {**opts, "mysql-agy/state": state} if _real_credential_event(ctx) else opts
+        if ctx["real"] and ctx["event"] == "create":
+            async def recorded(_opts):
+                return state.get("params")
+            handed = await ssh.ensure_key(handed, recorded)
+            if failed(handed):
+                return handed
+            handed = ssh.preflight(ssh.with_machine_key(handed))
+            if failed(handed):
+                return handed
+            handed = ssh_config.preflight(handed)
+            if failed(handed):
+                return handed
+            return {**handed, "blue/exit": 0}
+        return {**ssh.with_machine_key(handed), "blue/exit": 0}
 
     return await preflight(
         original, defaults=DEFAULTS, overlay=read_pars, env=environment,
@@ -84,13 +101,20 @@ async def start_step(original: dict, env: dict | None = None, reader=None) -> di
 
 def wire_fn(step: str, run_opts: dict):
     if run_opts.get("blue/event") == "delete":
+        # The `~/.ssh/config` block goes before the destroy, the keypair after
+        # it. A block that outlives its host is stale but harmless; a key that
+        # predeceases its host locks the operator out of members that still
+        # exist. Both orders are deliberate — standards/ssh-config.md §4 is
+        # explicit that they must not be tidied into agreement.
         return {
             "mysql-agy/start": (start_step, "mysql-agy/load-infrastructure"),
             "mysql-agy/load-infrastructure": (tools.load_infrastructure_step,
                                              "mysql-agy/cleanup"),
-            "mysql-agy/cleanup": (tools.cleanup_step, "mysql-agy/dns"),
+            "mysql-agy/cleanup": (tools.cleanup_step, "mysql-agy/ansible-local"),
+            "mysql-agy/ansible-local": (tools.ansible_local_step, "mysql-agy/dns"),
             "mysql-agy/dns": (tools.dns_step, "mysql-agy/infrastructure"),
-            "mysql-agy/infrastructure": (tools.infrastructure_step,),
+            "mysql-agy/infrastructure": (tools.infrastructure_step, "mysql-agy/ssh-cleanup"),
+            "mysql-agy/ssh-cleanup": (ssh.cleanup_step,),
         }.get(step)
     if run_opts.get("blue/event") == "health":
         return {
@@ -99,10 +123,13 @@ def wire_fn(step: str, run_opts: dict):
                                              "mysql-agy/health"),
             "mysql-agy/health": (tools.health_step,),
         }.get(step)
+    # The block is written after compute, where the addresses first exist,
+    # and before the members are converged (ssh-config.md §4).
     return {
         "mysql-agy/start": (start_step, "mysql-agy/infrastructure"),
-        "mysql-agy/infrastructure": (tools.infrastructure_step,
-                                    "mysql-agy/dns", "mysql-agy/base"),
+        "mysql-agy/infrastructure": (tools.infrastructure_step, "mysql-agy/ansible-local"),
+        "mysql-agy/ansible-local": (tools.ansible_local_step,
+                                   "mysql-agy/dns", "mysql-agy/base"),
         "mysql-agy/dns": (tools.dns_step, "mysql-agy/cluster"),
         "mysql-agy/base": (tools.base_step, "mysql-agy/cluster"),
         "mysql-agy/cluster": (tools.cluster_step, "mysql-agy/backup"),
@@ -119,8 +146,9 @@ def backend_advice(tool: str):
 
 
 side_effecting = ["mysql-agy/infrastructure", "mysql-agy/load-infrastructure",
-                  "mysql-agy/dns", "mysql-agy/base", "mysql-agy/cluster",
-                  "mysql-agy/backup", "mysql-agy/health", "mysql-agy/cleanup"]
+                  "mysql-agy/ansible-local", "mysql-agy/dns", "mysql-agy/base",
+                  "mysql-agy/cluster", "mysql-agy/backup", "mysql-agy/health",
+                  "mysql-agy/cleanup", "mysql-agy/ssh-cleanup"]
 
 
 def create_workflow():

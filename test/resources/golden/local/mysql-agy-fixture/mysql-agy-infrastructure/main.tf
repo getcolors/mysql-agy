@@ -20,6 +20,17 @@ data "digitalocean_vpc" "cluster" {
   region = "ams3"
 }
 
+# Keygen mode (workspace standards/ssh-keypair.md): the account key is named
+# after the profile and lives in this stack's state, which is what makes its
+# ownership decidable. One key for the cluster, not one per member — the
+# deployment is one thing, and a key per machine would multiply what the
+# standard exists to make singular. Never reference a literal key id here in
+# keygen mode.
+resource "digitalocean_ssh_key" "machine" {
+  name       = "mysql-agy-fixture"
+  public_key = trimspace(file("/home/build-placeholder/.ssh/mysql-agy-fixture.pub"))
+}
+
 resource "digitalocean_droplet" "node" {
   count    = 3
   name     = "${local.name}-node-${count.index + 1}"
@@ -27,7 +38,7 @@ resource "digitalocean_droplet" "node" {
   size     = "s-2vcpu-4gb"
   image    = "ubuntu-24-04-x64"
   vpc_uuid = data.digitalocean_vpc.cluster.id
-  ssh_keys = ["12345678"]
+  ssh_keys = [digitalocean_ssh_key.machine.id]
   tags     = ["colors-mysql-agy", local.name]
 
   lifecycle {
@@ -118,6 +129,7 @@ output "vpc_ip_range" {
 output "params" {
   value = {
     provider     = "digitalocean"
+    ssh_key_id   = digitalocean_ssh_key.machine.id
     reserved_ip  = digitalocean_reserved_ip.endpoint.ip_address
     vpc_id       = data.digitalocean_vpc.cluster.id
     vpc_ip_range = data.digitalocean_vpc.cluster.ip_range
