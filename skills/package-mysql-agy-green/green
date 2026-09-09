@@ -25,7 +25,7 @@
 ;; cannot resolve its own library says so rather than inventing a SHA or
 ;; silently falling back to whatever is lying around. `bb pin` refuses to stamp
 ;; a dirty or unpushed HEAD for the same reason.
-(def ^:private mysql-agy-sha "fbe30cac9944cb09c39785116077521302cdf06a")
+(def ^:private mysql-agy-sha "95d9b65a585c44a999f335f7cdc224f242521323")
 
 (def ^:private mysql-agy-git-url "https://github.com/getcolors/mysql-agy.git")
 (def ^:private green-git-url "https://github.com/getcolors/green.git")
