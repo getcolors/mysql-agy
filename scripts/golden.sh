@@ -72,9 +72,9 @@ checks() {
     [ -f "$actual/mysql-agy-infrastructure/nodes/$node/node.tf.json" ] || exit 1
   done
   if [ "$fixture" = colors ]; then
-    grep -q "IdentityFile ~/.ssh/$profile" "$actual/mysql-agy-ansible-local/main.yml" || exit 1
+    grep -q "colors_keygen: true" "$actual/mysql-agy-ansible-local/main.yml" || exit 1
   else
-    grep -q 'IdentityFile ~/.ssh/id_ed25519' "$actual/mysql-agy-ansible-local/main.yml" || exit 1
+    grep -q 'colors_keygen: false' "$actual/mysql-agy-ansible-local/main.yml" || exit 1
   fi
   grep -q "$profile/mysql-agy-dns.tfstate" "$actual/mysql-agy-dns/backend.tf.json"
 
