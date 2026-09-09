@@ -14,15 +14,6 @@
 (defn ordinals [opts]
   (range 1 (inc (node-count opts))))
 
-(defn node-name
-  "The DigitalOcean droplet name for member `ordinal`, and the Ansible
-  inventory host alias."
-  [opts ordinal]
-  (str (:digitalocean-name opts) "-node-" ordinal))
-
-(defn node-names [opts]
-  (mapv #(node-name opts %) (ordinals opts)))
-
 (defn server-id
   "MySQL server_id derived from the ordinal."
   [ordinal]

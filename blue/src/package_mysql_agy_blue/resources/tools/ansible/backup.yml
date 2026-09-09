@@ -11,14 +11,15 @@
         daemon_reload: true
 
   tasks:
-    - name: Install the DigitalOcean token the endpoint agent needs
+    - name: Install the endpoint adapter credentials
       ansible.builtin.copy:
         dest: /etc/mysql-agy/secrets.env
         owner: root
         group: root
         mode: "0600"
         content: |
-          DO_TOKEN={{ lookup('env', 'COLORS_PAR_DO_TOKEN') }}
+<% for credential in endpoint-credentials %>          export <{ credential }>={{ lookup('env', '<{ credential }>') | quote }}
+<% endfor %>
       no_log: true
 
     - name: Install the backup-bucket rclone remote
@@ -69,6 +70,7 @@
         group: root
         mode: "0750"
       loop:
+        - colors-compute-endpoint
         - mysql-agy-endpoint
         - mysql-agy-heartbeat
         - mysql-agy-snapshot

@@ -15,13 +15,13 @@ data "cloudflare_zone" "zone" {
 }
 
 locals {
-  node_records = {"node-1.my-ha.fixture.example":"192.0.2.11","node-2.my-ha.fixture.example":"192.0.2.12","node-3.my-ha.fixture.example":"192.0.2.13"}
+  node_records = {"node-1.my-ha.fixture.example":"192.0.2.10","node-2.my-ha.fixture.example":"192.0.2.11","node-3.my-ha.fixture.example":"192.0.2.12"}
 }
 
 resource "cloudflare_dns_record" "cluster" {
   zone_id = data.cloudflare_zone.zone.id
   name    = "my-ha.fixture.example"
-  content = "192.0.2.10"
+  content = "198.51.100.10"
   type    = "A"
   ttl     = 60
   proxied = false

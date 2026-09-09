@@ -29,11 +29,11 @@ plugin_load_add = 'group_replication.so'
 
 group_replication_group_name   = "00000000-1111-2222-3333-444444444444"
 group_replication_local_address = "{{ private_ip }}:33061"
-group_replication_group_seeds  = "10.110.0.11:33061,10.110.0.12:33061,10.110.0.13:33061"
+group_replication_group_seeds  = "10.0.0.10:33061,10.0.0.11:33061,10.0.0.12:33061"
 
 group_replication_single_primary_mode              = ON
 group_replication_enforce_update_everywhere_checks = OFF
-group_replication_ip_allowlist                     = "10.110.0.0/20"
+group_replication_ip_allowlist                     = "10.0.0.0/24"
 group_replication_recovery_get_public_key          = ON
 
 group_replication_bootstrap_group = OFF

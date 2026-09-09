@@ -20,16 +20,6 @@ def ordinals(opts: dict) -> list[int]:
     return list(range(1, node_count(opts) + 1))
 
 
-def node_name(opts: dict, ordinal: int) -> str:
-    """The DigitalOcean droplet name for member `ordinal`, and the Ansible
-    inventory host alias."""
-    return f"{opts.get('digitalocean-name') or ''}-node-{ordinal}"
-
-
-def node_names(opts: dict) -> list[str]:
-    return [node_name(opts, ordinal) for ordinal in ordinals(opts)]
-
-
 def server_id(ordinal: int) -> int:
     """MySQL server_id derived from the ordinal."""
     return 100 + ordinal

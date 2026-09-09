@@ -31,7 +31,7 @@ mkdir "$tmp/project"
 cp "$launcher" "$tmp/project/green"; chmod +x "$tmp/project/green"
 cp "$root/test/fixtures/colors.yml" "$tmp/project/colors.yml"
 (cd "$tmp/project" && MYSQL_AGY_LIB_ROOT="$root" ./green build >/dev/null) || fail 'MYSQL_AGY_LIB_ROOT build failed'
-[ -f "$tmp/project/.colors/mysql-agy-fixture/mysql-agy-infrastructure/main.tf" ] || fail 'copied payload rendered nothing'
+[ -f "$tmp/project/.colors/mysql-agy-fixture/mysql-agy-infrastructure/shared/shared.tf.json" ] || fail 'copied payload rendered nothing'
 ok 'working-tree override renders from a copied payload'
 mkdir -p "$tmp/project/deep/path"
 (cd "$tmp/project/deep/path" && MYSQL_AGY_LIB_ROOT="$root" ../../green build >/dev/null) || fail 'upward desired-state search failed'

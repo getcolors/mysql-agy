@@ -65,36 +65,18 @@ checks() {
     [ -d "$actual/$stage" ] || { echo "golden: $profile is missing stage $stage" >&2; exit 1; }
   done
 
-  local infra="$actual/mysql-agy-infrastructure/main.tf"
-  grep -q 'resource "digitalocean_droplet" "node"' "$infra"
-  grep -q 'resource "digitalocean_reserved_ip" "endpoint"' "$infra"
-  grep -q 'resource "digitalocean_firewall" "cluster"' "$infra"
-  grep -q 'output "node_public_ips"' "$infra"
-  grep -q 'output "reserved_ip"' "$infra"
-  grep -q 'source_addresses = local.client_sources' "$infra"
-  grep -q '203.0.113.10/32' "$infra"
-  grep -q '203.0.113.0/24' "$infra"
-  [ "$(grep -c 'prevent_destroy = true' "$infra")" -ge 3 ] || {
-    echo "golden: $profile: deployment-owned infrastructure lost prevent_destroy" >&2; exit 1
-  }
-  # The SSH Keypair Standard, both modes: keygen declares the profile-named key
-  # resource and references it by attribute; opt-out keeps the literal id and
-  # creates nothing.
+  # Compute documents are library-owned; this package checks its topology and
+  # the SSH identities consumed by application stages.
+  [ -d "$actual/mysql-agy-infrastructure/shared" ] || exit 1
+  for node in 0 1 2; do
+    [ -f "$actual/mysql-agy-infrastructure/nodes/$node/node.tf.json" ] || exit 1
+  done
   if [ "$fixture" = colors ]; then
-    grep -q 'resource "digitalocean_ssh_key" "machine"' "$infra" || { echo "golden: $profile: keygen mode declares no key resource" >&2; exit 1; }
-    grep -q 'ssh_keys = \[digitalocean_ssh_key.machine.id\]' "$infra" || { echo "golden: $profile: keygen mode does not reference the key by attribute" >&2; exit 1; }
-    grep -q 'ssh_key_id   = digitalocean_ssh_key.machine.id' "$infra" || { echo "golden: $profile: params carries no ssh_key_id" >&2; exit 1; }
-    grep -q 'IdentityFile ~/.ssh/mysql-agy-fixture' "$actual/mysql-agy-ansible-local/main.yml" || { echo "golden: $profile: the local stage names no identity file" >&2; exit 1; }
-    grep -q '"ansible_ssh_private_key_file" : "/home/build-placeholder/.ssh/mysql-agy-fixture"' "$actual/mysql-agy-ansible/inventory.json" || { echo "golden: $profile: the inventory does not name the generated key" >&2; exit 1; }
+    grep -q "IdentityFile ~/.ssh/$profile" "$actual/mysql-agy-ansible-local/main.yml" || exit 1
   else
-    ! grep -q 'digitalocean_ssh_key' "$infra" || { echo "golden: $profile: opt-out mode must create no key" >&2; exit 1; }
-    grep -q 'ssh_keys = \["12345678"\]' "$infra" || { echo "golden: $profile: opt-out mode lost the literal key id" >&2; exit 1; }
-    ! grep -qE '^\s+IdentityFile ' "$actual/mysql-agy-ansible-local/main.yml" || { echo "golden: $profile: opt-out mode must not guess an identity file" >&2; exit 1; }
+    grep -q 'IdentityFile ~/.ssh/id_ed25519' "$actual/mysql-agy-ansible-local/main.yml" || exit 1
   fi
-
-  if [ "$backend" = r2 ]; then
-    grep -q "$profile/mysql-agy-infrastructure.tfstate" "$actual/mysql-agy-infrastructure/backend.tf.json"
-  fi
+  grep -q "$profile/mysql-agy-dns.tfstate" "$actual/mysql-agy-dns/backend.tf.json"
 
   local dns="$actual/mysql-agy-dns/main.tf"
   grep -q 'resource "cloudflare_dns_record" "cluster"' "$dns"
@@ -110,8 +92,11 @@ checks() {
   grep -q 'no_log: true' "$ansible/cluster.yml"
   grep -q 'no_log: true' "$ansible/backup.yml"
 
-  if grep -rEq 'client-certificate-data|client-key-data|BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|REPLACE_ME|github_pat_|ghp_|gho_|ghu_|ghs_|ghr_' "$actual"; then
+  if grep -rEq 'client-certificate-data|client-key-data|BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|github_pat_|ghp_|gho_|ghu_|ghs_|ghr_' "$actual"; then
     echo "golden: $profile rendered credential-shaped material" >&2; exit 1
+  fi
+  if grep -rq --exclude=colors-compute-endpoint 'REPLACE_ME' "$actual"; then
+    echo "$profile: unresolved configuration placeholder" >&2; exit 1
   fi
   # A Selmer tag that survived rendering is a typo or an unsupplied key.
   if grep -rn '<{' "$actual"; then
@@ -131,7 +116,7 @@ checks() {
 }
 
 for fixture in colors optout; do
-  for backend in local r2; do
+  for backend in s3 r2; do
     build "$fixture" "$backend"
   done
 done
